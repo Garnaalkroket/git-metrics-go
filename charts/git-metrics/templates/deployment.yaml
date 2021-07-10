@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "git-metrics.fullname" . }}
+  labels:
+    {{- include "git-metrics.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "git-metrics.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "git-metrics.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "git-metrics.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      volumes:
+      - name: "go-git-ssh-key"
+        secret:
+          secretName: "go-git-ssh-key"
+      - name : "go-git-known-hosts"
+        configMap:
+          name: "go-git-ssh-hosts"
+      {{- if .Values.metrics.enabled }}
+      - name: "log-dir"
+        emptyDir: {}
+      {{- end }}  
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+          - name: "go-git-known-hosts"
+            mountPath: "/root/.ssh"
+          - name: "go-git-ssh-key"
+            mountPath: {{ dir .Values.goGit.params.keyFile }}
+          {{- if .Values.metrics.enabled }}
+          - name: "log-dir"
+            mountPath: {{ dir .Values.goGit.params.logLocation }}
+          {{- end }} 
+          {{- if .Values.goGit.params }}
+          env:
+            {{- if .Values.goGit.params.gitRepository}}
+            - name: "GIT_REMOTE_REPO"
+              value: "{{ .Values.goGit.params.gitRepository }}"
+            {{- end }}
+            {{- if .Values.goGit.params.logLocation }}
+            - name: "LOG_FILE_LOCATION"
+              value: "{{ .Values.goGit.params.logLocation }}" 
+            {{- end }}
+            {{- if .Values.goGit.params.keyFile}}
+            - name: "GIT_SSH_KEY"
+              value: "{{ .Values.goGit.params.keyFile }}"
+            {{- end }}
+          {{- end -}}  
+        {{ if .Values.metrics.enabled }}    
+        - name: {{ .Chart.Name }}-exporter
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.metrics.exporter.image.repository }}:{{ .Values.metrics.exporter.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.goGit.params }}
+          env:
+            {{- if .Values.goGit.params.logLocation }}
+            - name: "LOG_FILE_LOCATION"
+              value: "{{ .Values.goGit.params.logLocation }}" 
+            {{- end }}
+          {{- end }}
+          volumeMounts:
+          {{- if .Values.metrics.enabled }}
+          - name: "log-dir"
+            mountPath: {{ dir .Values.goGit.params.logLocation }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            periodSeconds: 30
+            httpGet:
+              path: /metrics
+              port: 8080
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: 8080
+              port: http
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{ end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

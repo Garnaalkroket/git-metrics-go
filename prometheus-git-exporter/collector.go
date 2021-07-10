@@ -65,9 +65,9 @@ func readLines(r regexp.Regexp) repoTime {
 	}
 	defer file.Close()
 
-	buf := make([]byte, 100)
+	buf := make([]byte, 500)
 	stat, err := os.Stat(file_location)
-	start := stat.Size() - 100
+	start := stat.Size() - 500
 	fmt.Printf("\nCurrent size %d, reading %d starting from %d", stat.Size(), len(buf), start)
 	_, err = file.ReadAt(buf, start-1)
 	if err != nil {
